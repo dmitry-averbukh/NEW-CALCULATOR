@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="uk">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Калькулятор відправок</title>
+
+    <style>
+        :root { --bg:#0c0f14; --fg:#e9eef5; --mut:#9aa6b2; --card:#121722; --line:#1b2230; --acc:#2f6fed; --bad:#ff6b6b; --ok:#22c55e; }
+        *{box-sizing:border-box}
+        body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
+        header{padding:20px 16px;text-align:center;border-bottom:1px solid var(--line);background:#0f1420}
+        h1{margin:0 0 6px 0;font-size:20px}
+        .container{max-width:1100px;margin:0 auto;padding:16px}
+        .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:center}
+        .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:0 auto 16px}
+        label{font-size:12px;color:var(--mut)}
+        input,button,select{background:#0e1320;color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit}
+        button{cursor:pointer}
+        button.primary{background:var(--acc);border-color:var(--acc)}
+        table{width:100%;border-collapse:collapse}
+        th,td{border-bottom:1px solid var(--line);padding:8px;text-align:left;font-size:14px}
+        tr.warn td{background:#271a1a}
+        .right{text-align:right}
+        .mut{color:var(--mut)}
+        .pill{padding:2px 8px;border-radius:999px;background:#10233f;border:1px solid #1f3b6e;color:#cfe1ff;font-size:12px}
+        .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+        .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+        .actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+        .outline{outline:2px solid var(--acc)}
+        #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;background:#1c2536;border:1px solid #2a3a56;padding:10px 14px;border-radius:8px;display:none}
+
+        /* Темна стилізація інпуту файлу */
+        input[type="file"]{
+            border:1px solid var(--line);
+            background:#0e1320;
+            color:var(--fg);
+            padding:8px;
+            border-radius:10px;
+        }
+        input[type="file"]::file-selector-button{
+            background:var(--acc);
+            color:#fff;
+            border:0;
+            border-radius:8px;
+            padding:8px 12px;
+            margin-right:10px;
+            cursor:pointer;
+        }
+    </style>
+
+    <!-- pdf.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script>
+        if (window.pdfjsLib) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc =
+                "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js";
+            // стабільно локально
+            pdfjsLib.disableWorker = true;
+        }
+    </script>
+</head>
+<body>
+<header>
+    <h1>Калькулятор відправок</h1>
+</header>
+
+<div class="container">
+    <!-- Завантаження -->
+    <section class="card">
+        <div class="row">
+            <div>
+                <label>PDF з наклейками</label><br/>
+                <input type="file" id="pdfInput" accept="application/pdf" />
+            </div>
+
+            <div>
+                <label>Діапазон наклейок</label><br/>
+                <input type="number" id="startLabel" placeholder="з №" style="width:110px">
+                <input type="number" id="endLabel" placeholder="до №" style="width:110px">
+            </div>
+        </div>
+        <div class="row" style="margin-top:8px">
+            <button class="primary" id="btnParse">Завантажити та обробити</button>
+            <button id="btnAddManual">Додати картку без PDF</button>
+        </div>
+    </section>
+
+    <!-- Картки клієнтів -->
+    <section id="clients"></section>
+
+    <!-- Параметри та підсумки -->
+    <aside class="card" id="rulesCard">
+        <h3 style="margin:0;text-align:center">Параметри</h3>
+        <div class="grid-2">
+            <div>
+                <label>Клієнту від ціни на наклейці (%)</label>
+                <input type="number" id="clientDiscountPct" value="30" min="0" max="100" />
+            </div>
+            <div>
+                <label>Знижка для Наталі (%)</label>
+                <input type="number" id="natashaDiscountPct" value="20" min="0" max="100" />
+            </div>
+        </div>
+
+        <h3 style="margin:0;text-align:center;margin-top:10px">Підсумки</h3>
+        <div id="totals"></div>
+
+        <div class="actions" style="margin-top:8px">
+            <button id="btnRecalc" class="primary">Перерахувати</button>
+            <button id="btnExport">Експорт CSV</button>
+            <button id="btnMergeNext">Об’єднати виділену з наступною</button>
+        </div>
+        <small class="mut" style="display:block;text-align:center;margin-top:6px">Клік по заголовку картки — щоб її виділити.</small>
+    </aside>
+</div>
+
+<div id="toast"></div>
+<script src="index.js"></script>
+</body>
+</html>
