@@ -9,6 +9,8 @@ const RULES = {
     maxim: { smallG: 250, priceSmall: 10, priceLarge: 25 },
     over:  { priceMaxim: 20 },
     roundingMoney: 1,
+    noDiscountUpToG: 259,    // <= 259 г — без знижки
+    smallTxnFeeUah: 20       // +20 грн до оплати для малих
 };
 
 const state = {
@@ -27,12 +29,22 @@ function toast(msg) {
 function roundMoney(x, step = RULES.roundingMoney) {
     return Math.round((x ?? 0) / step) * step;
 }
-function priceForClient(labelPrice) {
-    const disc = (state.discounts.clientPct ?? 30) / 100;
-    return roundMoney(labelPrice * (1 - disc));
-}
 function uniqId(){ return Date.now()+"-"+Math.random().toString(36).slice(2,7); }
 const clamp = (v,min,max)=>Math.max(min,Math.min(max,v));
+
+// Цена для клиента с учётом правила "до 259 г — без скидки, +20 грн"
+function clientPriceFor(item) {
+    const label = Number(item.labelPriceUah);
+    if (!Number.isFinite(label)) return null;
+
+    if (typeof item.weightG === "number" && item.weightG <= RULES.noDiscountUpToG) {
+        // малые отправления — без скидки, +20 грн комиссия
+        return roundMoney(label + RULES.smallTxnFeeUah);
+    }
+    // обычный случай — скидка от цены на наклейке
+    const disc = (state.discounts.clientPct ?? 30) / 100;
+    return roundMoney(label * (1 - disc));
+}
 
 // ===== Парсинг PDF (1 файл) =====
 async function parseSinglePdf(file) {
@@ -71,7 +83,7 @@ function groupTextByLines(items) {
     });
 }
 
-// РЕГЕКСи
+// Регекси
 const RE_TRACK  = /\b([A-Z]{2})\s?(\d{3})\s?(\d{3})\s?(\d{3})\s?([A-Z]{2})\b/;
 const RE_WEIGHT = /(\d+(?:[.,]\d+)?)\s?(?:kg|кг)\b/i;
 const RE_PRICE  = /(\d[\d\s]*(?:[.,]\d{1,2})?)\s?(?:UAH|грн\.?|₴)/i;
@@ -129,35 +141,10 @@ function extractShipmentsFromLines(lines) {
         seenTracks.add(track);
 
         const labelPriceUah = bestP!=null ? bestP : null;
-        const clientPriceUah = labelPriceUah!=null ? priceForClient(labelPriceUah) : null;
-        results.push({
-            track,
-            weightG: (bestW!=null ? bestW : null),
-            labelPriceUah,
-            clientPriceUah
-        });
-    }
+        const weightG = (bestW!=null ? bestW : null);
+        const clientPriceUah = labelPriceUah!=null ? clientPriceFor({ labelPriceUah, weightG }) : null;
 
-    // Фоллбек: якщо треків не знайшли (рідко), обережно підбираємо пари з вікна, з дедупом
-    if (!results.length) {
-        const seenCombo = new Set();
-        for (let i=0;i<lines.length;i++) {
-            const windowStr = lines.slice(i, i+5).join(" ");
-            const w = windowStr.match(RE_WEIGHT);
-            const p = windowStr.match(RE_PRICE);
-            const t = windowStr.match(RE_TRACK);
-            if (w || p || t) {
-                const track = t ? (t[1]+t[2]+t[3]+t[4]+t[5]).replace(/\s+/g,"") : "";
-                const weightG = w ? Math.round(toNumber(w[1]) * 1000) : null;
-                const labelPriceUah = p ? toNumber(p[1]) : null;
-                const key = `${track}|${weightG||""}|${labelPriceUah||""}`;
-                if (seenCombo.has(key)) { i+=1; continue; }
-                seenCombo.add(key);
-                const clientPriceUah = labelPriceUah!=null ? priceForClient(labelPriceUah) : null;
-                results.push({ track, weightG, labelPriceUah, clientPriceUah });
-                i += 2;
-            }
-        }
+        results.push({ track, weightG, labelPriceUah, clientPriceUah });
     }
 
     return results;
@@ -173,12 +160,16 @@ function renderClients() {
         sec.className = "card";
         sec.dataset.id = c.id;
 
+        // Подсветка рамкой, если не введена фактическая сумма (и есть отправления)
+        const needsPost = needsActualPost(c);
+        sec.style.borderColor = needsPost ? "#ff6b6b" : ""; // красная окантовка
+
         sec.innerHTML = `
       <div class="row" style="justify-content:space-between;cursor:pointer" data-act="select-card">
         <div><b>${c.name}</b> <span class="pill">#${idx+1}</span></div>
         <div class="row" style="cursor:auto">
           <label>Фактична оплата за пошту (грн)</label>
-          <input type="number" min="0" step="1" value="${c.actualPostPaidUah ?? 0}" data-act="actual-post" style="width:120px" />
+          <input type="number" min="0" step="1" value="${c.actualPostPaidUah ?? ''}" data-act="actual-post" style="width:120px" />
           <label>Перевіси</label>
           <select data-act="over-sel">${[...Array(11).keys()].map(n=>`<option value="${n}" ${c.overCount===n?'selected':''}>${n}</option>`).join("")}</select>
           <button data-act="add-row">+ Відправлення</button>
@@ -251,9 +242,13 @@ function renderClients() {
             }
         });
 
+        // ввод фактичної суми: подсветка исчезает сразу
         sec.querySelectorAll("[data-act='actual-post']").forEach(inp=>{
             inp.addEventListener("input", e => {
-                c.actualPostPaidUah = Number(e.target.value)||0;
+                const val = e.target.value;
+                c.actualPostPaidUah = val === "" ? null : Number(val);
+                // обновим только рамку и итоги (без полной перерисовки таблицы)
+                sec.style.borderColor = needsActualPost(c) ? "#ff6b6b" : "";
                 renderTotals();
             });
         });
@@ -303,7 +298,7 @@ function editRowInline(tr, it, client){
         it.track = get("track").value.trim();
         it.weightG = get("weightG").value ? Number(get("weightG").value) : null;
         it.labelPriceUah = get("labelPriceUah").value ? Number(get("labelPriceUah").value) : null;
-        it.clientPriceUah = it.labelPriceUah!=null ? priceForClient(it.labelPriceUah) : null;
+        it.clientPriceUah = (it.labelPriceUah!=null) ? clientPriceFor(it) : null;
         renderClients(); renderTotals();
     });
 }
@@ -319,6 +314,18 @@ function calcNatasha(weightG) {
     if (typeof weightG !== "number" || Number.isNaN(weightG)) return 0;
     for (const r of RULES.natasha) if (weightG <= r.maxG) return r.price;
     return 0;
+}
+
+function needsActualPost(c){
+    const hasRows = (c.items && c.items.length > 0);
+    const val = Number(c.actualPostPaidUah);
+    // считаем "введено" только если число > 0 и не NaN
+    const entered = Number.isFinite(val) && val > 0;
+    return hasRows && !entered;
+}
+
+function anyClientMissingPost(){
+    return state.clients.some(needsActualPost);
 }
 
 function aggregate() {
@@ -363,11 +370,15 @@ function renderTotals(){
     const t = aggregate();
     const box = document.getElementById("totals");
     if (!box) return;
+
+    const missing = anyClientMissingPost();
+    const profitClass = missing ? 'bad' : (t.finalProfit>=0?'ok':'bad');
+
     box.innerHTML = `
     <div class="grid-3">
       <div><label>Сума клієнтів (грн)</label><div><b>${t.clientsSum}</b></div></div>
       <div><label>Пошта фактично (грн)</label><div>${t.postFact}</div></div>
-      <div><label>Фін.прибуток (грн)</label><div class="${t.finalProfit>=0?'ok':'bad'}"><b>${t.finalProfit}</b></div></div>
+      <div><label>Фін.прибуток (грн)</label><div class="${profitClass}"><b>${t.finalProfit}</b></div></div>
     </div>
     <div class="grid-3" style="margin-top:10px">
       <div><label>Наталі (повна)</label><div>${t.natashaFull}</div></div>
@@ -379,7 +390,17 @@ function renderTotals(){
       <div><label>Максим</label><div>${t.maxim} <span class="mut">(${t.cntSmall} мал / ${t.cntLarge} вел / перевіс ${t.cntOver})</span></div></div>
     </div>
   `;
-    document.getElementById("natashaManual").addEventListener("input", e=>{
+
+    // Наталі: пересчитываем ТОЛЬКО по Enter/blur
+    const nm = document.getElementById("natashaManual");
+    nm.addEventListener("keydown", e=>{
+        if (e.key === "Enter") {
+            const val = Number(e.target.value);
+            state.natashaManual = isNaN(val) ? null : val;
+            renderTotals();
+        }
+    });
+    nm.addEventListener("blur", e=>{
         const val = Number(e.target.value);
         state.natashaManual = isNaN(val) ? null : val;
         renderTotals();
@@ -437,8 +458,10 @@ function buildClientMessage(client){
 // ===== Кнопки =====
 document.getElementById("btnParse").addEventListener("click", async ()=>{
     const file  = document.getElementById("pdfInput").files[0];
-    const start = Number(document.getElementById("startLabel").value)||1;
-    const end   = Number(document.getElementById("endLabel").value)||Infinity;
+    const startEl = document.getElementById("startLabel");
+    const endEl   = document.getElementById("endLabel");
+    const start = Number(startEl.value)||1;
+    const end   = Number(endEl.value)||Infinity;
 
     if (!file) { toast("Оберіть PDF"); return; }
 
@@ -448,8 +471,14 @@ document.getElementById("btnParse").addEventListener("click", async ()=>{
         let items = parsedAll.slice(start-1, endIdx);
         const id = uniqId();
         const fname = file.name.replace(/\.pdf$/i, "");
-        state.clients.push({ id, name: fname, items, actualPostPaidUah: 0, overCount: 0 });
+        state.clients.push({ id, name: fname, items, actualPostPaidUah: null, overCount: 0 });
         state.selectedClientId = id;
+
+        // Обнуление полей после успешной обработки
+        document.getElementById("pdfInput").value = "";
+        startEl.value = "";
+        endEl.value = "";
+
         renderClients(); renderTotals();
         toast(`Додано рядків: ${items.length}`);
     } catch (e) {
@@ -460,9 +489,8 @@ document.getElementById("btnParse").addEventListener("click", async ()=>{
 
 document.getElementById("btnAddManual").addEventListener("click", ()=>{
     const id = uniqId();
-    // Ім'я для порожньої картки — за замовчуванням
     const name = `Клієнт ${state.clients.length+1}`;
-    state.clients.push({ id, name, items:[{track:"",weightG:null,labelPriceUah:null,clientPriceUah:null}], actualPostPaidUah:0, overCount:0 });
+    state.clients.push({ id, name, items:[{track:"",weightG:null,labelPriceUah:null,clientPriceUah:null}], actualPostPaidUah:null, overCount:0 });
     state.selectedClientId = id;
     renderClients(); renderTotals();
     toast("Додано порожню картку");
@@ -473,7 +501,7 @@ document.getElementById("btnRecalc").addEventListener("click", ()=>{
     state.discounts.natashaPct = Number(document.getElementById("natashaDiscountPct").value)||20;
     for (const c of state.clients)
         for (const it of c.items)
-            if (it.labelPriceUah!=null) it.clientPriceUah = priceForClient(it.labelPriceUah);
+            if (it.labelPriceUah!=null) it.clientPriceUah = clientPriceFor(it);
     renderClients(); renderTotals();
     toast("Перераховано");
 });
@@ -482,4 +510,5 @@ document.getElementById("btnMergeNext").addEventListener("click", mergeSelectedW
 document.getElementById("btnExport").addEventListener("click", exportCSV);
 
 // Старт
+renderClients();
 renderTotals();
