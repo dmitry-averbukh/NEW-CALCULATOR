@@ -2,120 +2,204 @@
 <html lang="uk">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Калькулятор відправок</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- pdf.js (render + textContent) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous"></script>
 
     <style>
-        :root { --bg:#0c0f14; --fg:#e9eef5; --mut:#9aa6b2; --card:#121722; --line:#1b2230; --acc:#2f6fed; --bad:#ff6b6b; --ok:#22c55e; }
-        *{box-sizing:border-box}
-        body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
-        header{padding:20px 16px;text-align:center;border-bottom:1px solid var(--line);background:#0f1420}
-        h1{margin:0 0 6px 0;font-size:20px}
-        .container{max-width:1100px;margin:0 auto;padding:16px}
-        .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:center}
-        .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:0 auto 16px}
-        label{font-size:12px;color:var(--mut)}
-        input,button,select{background:#0e1320;color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit}
-        button{cursor:pointer}
-        button.primary{background:var(--acc);border-color:var(--acc)}
-        table{width:100%;border-collapse:collapse}
-        th,td{border-bottom:1px solid var(--line);padding:8px;text-align:left;font-size:14px}
-        tr.warn td{background:#271a1a}
-        .right{text-align:right}
-        .mut{color:var(--mut)}
-        .pill{padding:2px 8px;border-radius:999px;background:#10233f;border:1px solid #1f3b6e;color:#cfe1ff;font-size:12px}
-        .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-        .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
-        .actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
-        .outline{outline:2px solid var(--acc)}
-        #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;background:#1c2536;border:1px solid #2a3a56;padding:10px 14px;border-radius:8px;display:none}
+        :root { color-scheme: dark; }
 
-        /* Темна стилізація інпуту файлу */
-        input[type="file"]{
-            border:1px solid var(--line);
-            background:#0e1320;
-            color:var(--fg);
-            padding:8px;
-            border-radius:10px;
+        /* ====== БАЗА / КОНТЕЙНЕР ====== */
+        html, body { height: 100%; }
+        body{
+            margin:0;
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, 'Helvetica Neue', Arial, 'Noto Sans',
+            'Apple Color Emoji','Segoe UI Emoji';
+            background:#0f1115; color:#e6e7ea;
         }
-        input[type="file"]::file-selector-button{
-            background:var(--acc);
-            color:#fff;
-            border:0;
+        .wrap{
+            max-width: 1800px;            /* шире под большие мониторы */
+            margin: 30px auto;
+            padding: 0 16px;
+            text-align: center;           /* центрируем контент по умолчанию */
+        }
+        h1{
+            margin: 0 0 16px;
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: .2px;
+            text-align: center;
+        }
+
+        /* ====== ПАНЕЛИ / РЯДЫ / ЭЛЕМЕНТЫ ФОРМ ====== */
+        .panel{
+            background:#151922;
+            border:1px solid #2a2f3a;
+            border-radius:10px;
+            padding:12px;
+            margin-bottom:14px;
+        }
+        .row{
+            display:flex;
+            align-items:center;
+            gap:8px;
+            flex-wrap:wrap;
+            justify-content:center;       /* центрируем кнопки и инпуты */
+        }
+        label{ opacity:.85; margin-right:4px }
+
+        input, select, button{
+            background:#0f1320;
+            border:1px solid #2a2f3a;
+            color:#e6e7ea;
             border-radius:8px;
             padding:8px 12px;
-            margin-right:10px;
+            outline:none;
+            font-size:14px;
+        }
+        input[type="number"]{ width: 110px; }
+        button{
             cursor:pointer;
+            transition:.12s ease;
+        }
+        button.primary{
+            background:#1e2a44; border-color:#2f3c5d;
+        }
+        button:hover{ filter: brightness(1.05) }
+        button.primary:hover{ background:#24335b }
+        button:active{ transform: translateY(1px) }
+
+        /* ====== КАРТОЧКИ / ГРИДЫ ====== */
+        .card{
+            border:1px solid #2a2f3a;
+            border-radius:10px;
+            padding:12px;
+            margin:14px 0;
+            background:#131722;
+        }
+        .outline{ box-shadow: 0 0 0 2px #3952ff inset }
+        .pill{
+            background:#243;
+            border:1px solid #2a2f3a;
+            padding:2px 6px;
+            border-radius:999px;
+            font-size:12px
+        }
+        .grid-3{
+            display:grid;
+            grid-template-columns: repeat(3, minmax(0,1fr));
+            gap:10px;
+            justify-items:center;         /* центрируем содержимое ячеек грида */
+            text-align:center;
+        }
+
+        /* ====== ТАБЛИЦЫ ====== */
+        .table-wrap{ overflow:auto; }
+        table{
+            width: auto;                  /* авто-ширина, а не 100% — легче центрировать */
+            margin: 0 auto;               /* центрируем таблицу */
+            border-collapse: collapse;
+            table-layout: auto;
+        }
+        th, td{
+            padding: 7px 10px;
+            border-bottom:1px solid #252a35;
+            white-space: nowrap;
+            font-size:14px;
+            text-align: center;           /* центр по колонкам */
+            vertical-align: middle;
+        }
+        th{
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background:#151922;
+        }
+        td.right{ text-align:center }   /* действия тоже по центру */
+
+        /* ====== СТАТУСЫ / МЕЛОЧИ ====== */
+        .mut { opacity:.6 }
+        .ok  { color:#52c41a }
+        .bad { color:#ff6b6b }
+
+        /* предупреждение для пустых/неполных строк */
+        tr.warn td{ background: rgba(255, 255, 0, 0.04); }
+
+        /* США и НЕ SALE — мягкая красная подсветка */
+        tr.row-alert { background: rgba(255, 59, 48, 0.09); }
+        tr.row-alert td { box-shadow: inset 0 0 0 1px rgba(255, 59, 48, 0.25); }
+
+        /* ====== ТОСТ ====== */
+        #toast{
+            position: fixed;
+            left: 50%;
+            bottom: 18px;
+            transform: translateX(-50%);
+            background:#121826;
+            border:1px solid #2a2f3a;
+            padding:8px 12px;
+            border-radius:8px;
+            display:none;
+            pointer-events:none;
+        }
+
+        /* ====== АДАПТИВ ====== */
+        @media (max-width: 900px){
+            .wrap{ padding: 0 10px; }
+            th, td{ font-size:13px; padding:6px 8px; }
         }
     </style>
-
-    <!-- pdf.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
-    <script>
-        if (window.pdfjsLib) {
-            pdfjsLib.GlobalWorkerOptions.workerSrc =
-                "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js";
-            // стабільно локально
-            pdfjsLib.disableWorker = true;
-        }
-    </script>
 </head>
 <body>
-<header>
+<div class="wrap">
     <h1>Калькулятор відправок</h1>
-</header>
 
-<div class="container">
-    <!-- Завантаження -->
-    <section class="card">
-        <div class="row">
-            <div>
-                <label>PDF з наклейками</label><br/>
-                <input type="file" id="pdfInput" accept="application/pdf" />
-            </div>
-
-            <div>
-                <label>Діапазон наклейок</label><br/>
-                <input type="number" id="startLabel" placeholder="з №" style="width:110px">
-                <input type="number" id="endLabel" placeholder="до №" style="width:110px">
-            </div>
-        </div>
-        <div class="row" style="margin-top:8px">
-            <button class="primary" id="btnParse">Завантажити та обробити</button>
+    <!-- Панель: кнопки + курс НБУ -->
+    <div class="panel">
+        <div class="row" id="topButtons">
+            <input type="file" id="pdfInput" accept="application/pdf" />
+            <label>Діапазон наклейок</label>
+            <label>з №</label><input id="startLabel" type="number" min="1" style="width:80px" />
+            <label>до №</label><input id="endLabel"   type="number" min="1" style="width:80px" />
+            <button id="btnParse" class="primary">Завантажити та обробити</button>
             <button id="btnAddManual">Додати картку без PDF</button>
-        </div>
-    </section>
-
-    <!-- Картки клієнтів -->
-    <section id="clients"></section>
-
-    <!-- Параметри та підсумки -->
-    <aside class="card" id="rulesCard">
-        <h3 style="margin:0;text-align:center">Параметри</h3>
-        <div class="grid-2">
-            <div>
-                <label>Клієнту від ціни на наклейці (%)</label>
-                <input type="number" id="clientDiscountPct" value="30" min="0" max="100" />
-            </div>
-            <div>
-                <label>Знижка для Наталі (%)</label>
-                <input type="number" id="natashaDiscountPct" value="20" min="0" max="100" />
-            </div>
-        </div>
-
-        <h3 style="margin:0;text-align:center;margin-top:10px">Підсумки</h3>
-        <div id="totals"></div>
-
-        <div class="actions" style="margin-top:8px">
-            <button id="btnRecalc" class="primary">Перерахувати</button>
+            <button id="btnMergeNext">Об’єднати з наступною</button>
             <button id="btnExport">Експорт CSV</button>
-            <button id="btnMergeNext">Об’єднати виділену з наступною</button>
         </div>
-        <small class="mut" style="display:block;text-align:center;margin-top:6px">Клік по заголовку картки — щоб її виділити.</small>
-    </aside>
+
+        <!-- Курс НБУ з ручною корекцією -->
+        <div class="row" style="margin-top:8px">
+            <span style="opacity:.8">Курс НБУ:</span>
+            <span>USD</span><input id="fxUSD" type="number" step="0.01" style="width:90px">
+            <span>EUR</span><input id="fxEUR" type="number" step="0.01" style="width:90px">
+            <span>GBP</span><input id="fxGBP" type="number" step="0.01" style="width:90px">
+            <button id="fxApply" type="button">Застосувати</button>
+            <button id="fxRefresh" type="button">Оновити з НБУ</button>
+            <small class="mut" id="fxStamp" style="margin-left:6px"></small>
+        </div>
+    </div>
+
+    <!-- Список карток -->
+    <div id="clients"></div>
+
+    <!-- Параметри + Підсумки -->
+    <div class="panel">
+        <div class="row">
+            <label>Клієнту від ціни на наклейці (%)</label>
+            <input type="number" id="clientDiscountPct" value="30" min="0" max="100" style="width:90px" />
+            <label>Знижка для Наталі (%)</label>
+            <input type="number" id="natashaDiscountPct" value="20" min="0" max="100" style="width:90px" />
+            <button id="btnRecalc">Перерахувати</button>
+        </div>
+    </div>
+
+    <div class="panel" id="totals"></div>
 </div>
 
 <div id="toast"></div>
-<script src="index.js"></script>
+
+<script src="./index.js"></script>
 </body>
 </html>
